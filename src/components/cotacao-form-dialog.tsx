@@ -23,6 +23,7 @@ import {
   type CotacaoForm,
 } from "@/lib/cotacoes-store";
 import { calcularDistanciaEntreCeps, buscarCep, type EnderecoCep } from "@/lib/cep";
+import { MapaRota } from "@/components/mapa-rota";
 import type { CotacaoComPedagios } from "@/lib/supabase";
 import { formatarBRL, formatarCep, formatarKm, normalizarCep } from "@/lib/utils";
 
@@ -72,6 +73,8 @@ const schema = z.object({
     .number({ invalid_type_error: "Informe o valor da faixa" })
     .positive("O valor da faixa precisa ser maior que zero"),
   pedagios: z.array(pedagioSchema),
+  // Polilinha [lat, lon] do trajeto (OSRM). Preenchida por "Calcular distância".
+  rota: z.array(z.tuple([z.number(), z.number()])),
 });
 
 type ValoresForm = z.infer<typeof schema>;
@@ -86,6 +89,7 @@ function valoresIniciais(cotacao: CotacaoComPedagios | undefined): ValoresForm {
       km_faixa: 0,
       valor_faixa: 0,
       pedagios: [],
+      rota: [],
     };
   }
   return {
@@ -100,6 +104,7 @@ function valoresIniciais(cotacao: CotacaoComPedagios | undefined): ValoresForm {
       praca: p.praca,
       valor: p.valor,
     })),
+    rota: cotacao.rota ?? [],
   };
 }
 
@@ -112,6 +117,9 @@ interface RotaCalculada {
   origem: string;
   destino: string;
   aproximada: boolean;
+  /** true quando o OSRM devolveu uma polilinha de trajeto. */
+  temTrajeto: boolean;
+  duracaoMin: number;
 }
 
 function useFormularioCotacao(
@@ -175,15 +183,22 @@ function useFormularioCotacao(
         shouldValidate: true,
         shouldDirty: true,
       });
+      setValue("rota", r.geometria, { shouldDirty: true });
       setRota({
         origem: rotuloLocalidade(r.origem),
         destino: rotuloLocalidade(r.destino),
         aproximada: r.aproximada,
+        temTrajeto: r.geometria.length >= 2,
+        duracaoMin: r.duracaoMin,
       });
       setValue("nome", nomePelasCidades(r.origem, r.destino), {
         shouldValidate: true,
       });
-      toast.success(`Distância estimada: ${formatarKm(r.distanciaKm)}`);
+      toast.success(
+        r.geometria.length >= 2
+          ? `Trajeto de caminhão: ${formatarKm(r.distanciaKm)} · ~${r.duracaoMin} min`
+          : `Distância estimada (sem trajeto): ${formatarKm(r.distanciaKm)}`,
+      );
     } catch (erro) {
       toast.error(
         erro instanceof Error ? erro.message : "Não foi possível calcular a distância.",
@@ -251,6 +266,7 @@ function CamposCotacao({ ctrl }: { ctrl: ControleFormulario }) {
   const kmFaixa = Number(watch("km_faixa")) || 0;
   const valorFaixa = Number(watch("valor_faixa")) || 0;
   const pedagiosAtuais = watch("pedagios");
+  const trajeto = watch("rota") ?? [];
 
   const subtotal = subtotalDistancia({
     distancia_km: distanciaKm,
@@ -341,13 +357,19 @@ function CamposCotacao({ ctrl }: { ctrl: ControleFormulario }) {
         {rota && (
           <p className="mt-2 text-xs text-muted-foreground">
             {rota.origem} → {rota.destino}
+            {rota.temTrajeto && rota.duracaoMin > 0 && ` · ~${rota.duracaoMin} min`}
             {rota.aproximada && " · distância aproximada (sem coordenada exata do CEP)"}
+            {!rota.temTrajeto && " · sem trajeto (roteador indisponível)"}
           </p>
         )}
         {errors.distancia_km && (
           <p className="mt-1 text-xs font-medium text-destructive">
             {errors.distancia_km.message}
           </p>
+        )}
+
+        {trajeto.length >= 2 && (
+          <MapaRota geometria={trajeto} className="mt-3 h-56" />
         )}
       </div>
 

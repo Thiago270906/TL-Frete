@@ -8,6 +8,7 @@ import {
   EditarCotacaoDialog,
   PainelNovoCalculo,
 } from "@/components/cotacao-form-dialog";
+import { MapaRota } from "@/components/mapa-rota";
 import {
   subtotalDistancia,
   totalCotacao,
@@ -131,6 +132,10 @@ function CartaoCotacao({
         <ResumoValor rotulo={`Pedágios (${cotacao.pedagios.length})`} valor={pedagios} />
         <ResumoValor rotulo="Total" valor={totalCotacao(cotacao)} destaque />
       </div>
+
+      {cotacao.rota && cotacao.rota.length >= 2 && (
+        <MapaRota geometria={cotacao.rota} className="mt-4 h-56" />
+      )}
 
       {/* Lista de pedágios (apenas registro) */}
       {cotacao.pedagios.length > 0 && (

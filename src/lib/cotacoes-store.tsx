@@ -36,6 +36,8 @@ export interface CotacaoForm {
   /** "A cada `km_faixa` km" custa "`valor_faixa` reais". */
   km_faixa: number;
   valor_faixa: number;
+  /** Polilinha [lat, lon] do trajeto (OSRM); ausente se não roteado. */
+  rota?: [number, number][];
   pedagios: PedagioForm[];
 }
 
@@ -335,6 +337,7 @@ function montarLinhaCotacao(
     distancia_km: Math.round((Number(d.distancia_km) || 0) * 10) / 10,
     km_faixa: Math.round((Number(d.km_faixa) || 0) * 10) / 10,
     valor_faixa: Math.round((Number(d.valor_faixa) || 0) * 100) / 100,
+    rota: d.rota && d.rota.length >= 2 ? d.rota : null,
   };
   // `created_at`/`updated_at` são preenchidos pelo banco; aqui só para o tipo.
   return {

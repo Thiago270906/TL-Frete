@@ -43,6 +43,8 @@ export interface LinhaCotacao {
   /** Tarifa por faixa: "a cada `km_faixa` km, cobra-se `valor_faixa` reais". */
   km_faixa: number;
   valor_faixa: number;
+  /** Polilinha [lat, lon] do trajeto (OSRM); null se não roteado. */
+  rota: [number, number][] | null;
   created_at: string;
   updated_at: string;
 }

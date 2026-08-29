@@ -30,6 +30,8 @@ create table if not exists public.cotacoes (
   -- tarifa por faixa: "a cada `km_faixa` km, cobra-se `valor_faixa` reais"
   km_faixa numeric not null default 0,
   valor_faixa numeric not null default 0,
+  -- polilinha [lat, lon] do melhor trajeto (OSRM); null quando não roteado
+  rota jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

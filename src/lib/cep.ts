@@ -7,8 +7,11 @@ import { normalizarCep } from "@/lib/utils";
  * (BrasilAPI v2 e, como fallback de endereço, ViaCEP) — ambas sem chave.
  * A BrasilAPI v2 às vezes devolve as coordenadas geográficas do CEP; quando
  * devolve, usamos direto. Quando não devolve (ou a API falha), caímos numa
- * tabela de centróides aproximados por faixa de CEP para ainda estimar a
- * distância. O número final é sempre editável no formulário.
+ * tabela de centróides aproximados por faixa de CEP.
+ *
+ * Com as coordenadas, o trajeto é traçado no Valhalla público da FOSSGIS com
+ * `costing=truck` (dimensões/peso de caminhão) — sem chave. Se o Valhalla falhar,
+ * a distância vira haversine × fator. O número final é sempre editável no form.
  */
 
 export interface EnderecoCep {
@@ -30,6 +33,13 @@ export interface ResultadoDistancia {
   distanciaKm: number;
   /** true se qualquer uma das pontas usou coordenada aproximada. */
   aproximada: boolean;
+  /**
+   * Polilinha `[lat, lon]` do melhor trajeto (OSRM). Vazia quando não foi
+   * possível rotear — aí `distanciaKm` é só a estimativa em linha reta.
+   */
+  geometria: [number, number][];
+  /** Duração estimada do trajeto em minutos (0 quando não roteado). */
+  duracaoMin: number;
 }
 
 // Centróides aproximados (lat, lon) por 1º dígito do CEP — regiões dos Correios.
@@ -194,7 +204,110 @@ export async function buscarCep(cepEntrada: string): Promise<EnderecoCep> {
   return resultado;
 }
 
-/** Consulta os dois CEPs e devolve a distância rodoviária estimada. */
+interface RotaRoteador {
+  distanciaKm: number;
+  duracaoMin: number;
+  geometria: [number, number][];
+}
+
+// Dimensões/peso de um caminhão "médio" brasileiro (articulado simples). Fazem
+// o Valhalla evitar pontes baixas, vias com restrição de peso e ruas estreitas.
+const CAMINHAO = {
+  height: 4.4, // m
+  width: 2.6, // m
+  length: 18.75, // m
+  weight: 23.0, // t
+  axle_load: 10.0, // t
+  hazmat: false,
+};
+
+/** Decodifica a polilinha do Valhalla (precisão 6) para pares `[lat, lon]`. */
+function decodificarPolyline6(texto: string): [number, number][] {
+  let indice = 0;
+  let lat = 0;
+  let lon = 0;
+  const pontos: [number, number][] = [];
+
+  while (indice < texto.length) {
+    let resultado = 0;
+    let desloc = 0;
+    let byte: number;
+    do {
+      byte = texto.charCodeAt(indice++) - 63;
+      resultado |= (byte & 0x1f) << desloc;
+      desloc += 5;
+    } while (byte >= 0x20);
+    lat += resultado & 1 ? ~(resultado >> 1) : resultado >> 1;
+
+    resultado = 0;
+    desloc = 0;
+    do {
+      byte = texto.charCodeAt(indice++) - 63;
+      resultado |= (byte & 0x1f) << desloc;
+      desloc += 5;
+    } while (byte >= 0x20);
+    lon += resultado & 1 ? ~(resultado >> 1) : resultado >> 1;
+
+    pontos.push([lat / 1e6, lon / 1e6]);
+  }
+  return pontos;
+}
+
+/**
+ * Trajeto de CAMINHÃO entre dois pontos via Valhalla público da FOSSGIS
+ * (`valhalla1.openstreetmap.de`, sem chave). Servidor comunitário — sem SLA:
+ * se falhar, devolve `null` e o chamador cai na estimativa em linha reta.
+ */
+async function rotearCaminhao(
+  origem: EnderecoCep,
+  destino: EnderecoCep,
+): Promise<RotaRoteador | null> {
+  try {
+    const resp = await fetch("https://valhalla1.openstreetmap.de/route", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        locations: [
+          { lat: origem.lat, lon: origem.lon },
+          { lat: destino.lat, lon: destino.lon },
+        ],
+        costing: "truck",
+        costing_options: { truck: CAMINHAO },
+        directions_options: { units: "kilometers" },
+        id: "tl-frete",
+      }),
+    });
+    if (!resp.ok) return null;
+
+    const dados = (await resp.json()) as {
+      trip?: {
+        status?: number;
+        summary?: { length?: number; time?: number };
+        legs?: { shape?: string }[];
+      };
+    };
+    const trip = dados.trip;
+    if (!trip || trip.status !== 0 || !trip.legs?.length) return null;
+
+    const geometria = trip.legs.flatMap((l) =>
+      l.shape ? decodificarPolyline6(l.shape) : [],
+    );
+    if (geometria.length < 2) return null;
+
+    return {
+      distanciaKm: trip.summary?.length ?? 0,
+      duracaoMin: (trip.summary?.time ?? 0) / 60,
+      geometria,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Consulta os dois CEPs e devolve o trajeto de caminhão (distância, duração e
+ * polilinha). Sem rota do Valhalla, cai na distância em linha reta × fator.
+ */
 export async function calcularDistanciaEntreCeps(
   cepOrigem: string,
   cepDestino: string,
@@ -204,13 +317,27 @@ export async function calcularDistanciaEntreCeps(
     buscarCep(cepDestino),
   ]);
 
-  const linhaReta = haversineKm([origem.lat, origem.lon], [destino.lat, destino.lon]);
-  const distanciaKm = Math.round(linhaReta * FATOR_RODOVIARIO * 10) / 10;
+  const rota = await rotearCaminhao(origem, destino);
+  const aproximada = origem.coordenadaAproximada || destino.coordenadaAproximada;
 
+  if (rota) {
+    return {
+      origem,
+      destino,
+      distanciaKm: Math.round(rota.distanciaKm * 10) / 10,
+      aproximada,
+      geometria: rota.geometria,
+      duracaoMin: Math.round(rota.duracaoMin),
+    };
+  }
+
+  const linhaReta = haversineKm([origem.lat, origem.lon], [destino.lat, destino.lon]);
   return {
     origem,
     destino,
-    distanciaKm,
-    aproximada: origem.coordenadaAproximada || destino.coordenadaAproximada,
+    distanciaKm: Math.round(linhaReta * FATOR_RODOVIARIO * 10) / 10,
+    aproximada: true,
+    geometria: [],
+    duracaoMin: 0,
   };
 }
