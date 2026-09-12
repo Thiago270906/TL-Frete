@@ -2,11 +2,9 @@ import { useState, type ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   Calculator,
-  LayoutDashboard,
   LogOut,
   Menu,
   Receipt,
-  Route as RouteIcon,
   Users,
   X,
 } from "lucide-react";
@@ -17,12 +15,11 @@ import { Button } from "@/components/ui/button";
 interface ItemNav {
   rotulo: string;
   para: string;
-  icone: typeof LayoutDashboard;
+  icone: typeof Calculator;
   soAdmin?: boolean;
 }
 
 const NAV: ItemNav[] = [
-  { rotulo: "Dashboard", para: "/", icone: LayoutDashboard },
   { rotulo: "Calculadora", para: "/calculadora", icone: Calculator },
   { rotulo: "Pedágios", para: "/pedagios", icone: Receipt, soAdmin: true },
   { rotulo: "Equipe", para: "/equipe", icone: Users, soAdmin: true },
@@ -81,9 +78,8 @@ function LinksNav({
 function Marca() {
   return (
     <div className="flex items-center gap-3 px-1">
-      <div className="flex size-9 items-center justify-center rounded-lg bg-sidebar-primary/15 text-sidebar-primary">
-        <RouteIcon className="size-5" />
-      </div>
+      <img src="/logo-branca.png" alt="TL Frete" className="h-6 w-auto" />
+      <div className="h-8 w-px bg-sidebar-foreground/20" />
       <div className="leading-tight">
         <p className="text-sm font-semibold tracking-tight text-sidebar-foreground">TL Frete</p>
         <p className="text-xs text-sidebar-foreground/70">Cálculo de fretes</p>
