@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "vite dev --port 3000",
     "build": "vite build",
-    "start": "node server-prod.mjs"
+    "start": "node server-prod.mjs",
+    "deploy": "vite build && wrangler deploy",
+    "cf:dev": "vite build && wrangler dev"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -33,6 +35,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.54.8",
     "@tailwindcss/vite": "^4.1.0",
     "@types/leaflet": "^1.9.22",
     "@types/node": "^22.10.5",
@@ -43,9 +46,12 @@
     "tw-animate-css": "^1.2.4",
     "typescript": "^5.7.2",
     "vite": "^7.1.0",
-    "vite-tsconfig-paths": "^5.1.4"
+    "vite-tsconfig-paths": "^5.1.4",
+    "wrangler": "^4.131.1"
   },
   "allowScripts": {
-    "esbuild@0.28.2": true
+    "esbuild@0.28.2": true,
+    "workerd@1.20260911.1": true,
+    "esbuild@0.28.1": true
   }
 }

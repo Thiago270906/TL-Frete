@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import tsConfigPaths from "vite-tsconfig-paths";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import { cloudflare } from "@cloudflare/vite-plugin";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import fs from "node:fs";
@@ -56,6 +57,8 @@ export default defineConfig({
     copiarEnvDoServidor(),
     tsConfigPaths({ projects: ["./tsconfig.json"] }),
     tailwindcss(),
+    // precisa vir antes do tanstackStart (builda o worker/SSR pra Cloudflare)
+    cloudflare({ viteEnvironment: { name: "ssr" } }),
     tanstackStart(),
     // o plugin react entra depois do tanstackStart
     viteReact(),

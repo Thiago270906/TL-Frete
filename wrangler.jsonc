@@ -1,0 +1,19 @@
+{
+  "name": "tl-frete",
+  "compatibility_date": "2026-09-12",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "@tanstack/react-start/server-entry",
+  // Variáveis SEM prefixo VITE_ (lidas via process.env no servidor, dentro de
+  // createServerFn().handler(...) — ver src/lib/server-env.ts). URL e anon key
+  // não são segredo (o anon key já vai pro bundle do client via VITE_*,
+  // protegido pelo RLS do banco), então podem ficar aqui versionadas.
+  //
+  // SUPABASE_SERVICE_ROLE_KEY NÃO entra aqui — configure como secret:
+  //   npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+  // (ou pelo painel: Workers & Pages > tl-frete > Settings > Variables,
+  // marcando "Encrypt").
+  "vars": {
+    "SUPABASE_URL": "https://rrrqpflzzltvigqqwoez.supabase.co",
+    "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJycnFwZmx6emx0dmlncXF3b2V6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc5ODc3MjksImV4cCI6MjEwMzU2MzcyOX0.Sq9e1YnxqYon7Oo2M5WqxtY05wXVfzQTSDlX3Ufwsu4",
+  },
+}
