@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as CalculadoraRouteImport } from './routes/calculadora'
 import { Route as EquipeRouteImport } from './routes/equipe'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as PedagiosRouteImport } from './routes/pedagios'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -34,18 +35,25 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PedagiosRoute = PedagiosRouteImport.update({
+  id: '/pedagios',
+  path: '/pedagios',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/calculadora': typeof CalculadoraRoute
   '/equipe': typeof EquipeRoute
   '/login': typeof LoginRoute
+  '/pedagios': typeof PedagiosRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/calculadora': typeof CalculadoraRoute
   '/equipe': typeof EquipeRoute
   '/login': typeof LoginRoute
+  '/pedagios': typeof PedagiosRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +61,14 @@ export interface FileRoutesById {
   '/calculadora': typeof CalculadoraRoute
   '/equipe': typeof EquipeRoute
   '/login': typeof LoginRoute
+  '/pedagios': typeof PedagiosRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/calculadora' | '/equipe' | '/login'
+  fullPaths: '/' | '/calculadora' | '/equipe' | '/login' | '/pedagios'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/calculadora' | '/equipe' | '/login'
-  id: '__root__' | '/' | '/calculadora' | '/equipe' | '/login'
+  to: '/' | '/calculadora' | '/equipe' | '/login' | '/pedagios'
+  id: '__root__' | '/' | '/calculadora' | '/equipe' | '/login' | '/pedagios'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,6 +76,7 @@ export interface RootRouteChildren {
   CalculadoraRoute: typeof CalculadoraRoute
   EquipeRoute: typeof EquipeRoute
   LoginRoute: typeof LoginRoute
+  PedagiosRoute: typeof PedagiosRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -99,6 +109,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/pedagios': {
+      id: '/pedagios'
+      path: '/pedagios'
+      fullPath: '/pedagios'
+      preLoaderRoute: typeof PedagiosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -107,6 +124,7 @@ const rootRouteChildren: RootRouteChildren = {
   CalculadoraRoute: CalculadoraRoute,
   EquipeRoute: EquipeRoute,
   LoginRoute: LoginRoute,
+  PedagiosRoute: PedagiosRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

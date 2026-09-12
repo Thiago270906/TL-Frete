@@ -50,6 +50,21 @@ create table if not exists public.pedagios (
 
 create index if not exists idx_pedagios_cotacao on public.pedagios (cotacao_id);
 
+-- pracas_pedagio: CATÁLOGO de referência (uf, praça/rodovia, valor) mantido
+-- pelo admin. Sem vínculo com pedagios (aquela é a lista por cálculo).
+create table if not exists public.pracas_pedagio (
+  id uuid primary key default gen_random_uuid(),
+  uf text not null,
+  praca text not null,
+  valor numeric not null default 0,
+  -- data da última atualização feita pelo admin
+  atualizado_em timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_pracas_pedagio_uf on public.pracas_pedagio (uf);
+
 -- ---------------------------------------------------------------------------
 -- FUNÇÕES
 -- ---------------------------------------------------------------------------
@@ -122,6 +137,11 @@ create trigger trg_set_updated_at_cotacoes
 drop trigger if exists trg_set_updated_at_pedagios on public.pedagios;
 create trigger trg_set_updated_at_pedagios
   before update on public.pedagios
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_set_updated_at_pracas_pedagio on public.pracas_pedagio;
+create trigger trg_set_updated_at_pracas_pedagio
+  before update on public.pracas_pedagio
   for each row execute function public.set_updated_at();
 
 -- (não há mais trigger de guarda em pedagios — a tabela é só registro)
@@ -202,6 +222,30 @@ create policy pedagios_delete on public.pedagios
   for delete to authenticated
   using (public.is_admin());
 
+-- pracas_pedagio (catálogo): todos autenticados leem; só admin escreve.
+alter table public.pracas_pedagio enable row level security;
+
+drop policy if exists pracas_pedagio_select on public.pracas_pedagio;
+create policy pracas_pedagio_select on public.pracas_pedagio
+  for select to authenticated
+  using (true);
+
+drop policy if exists pracas_pedagio_insert on public.pracas_pedagio;
+create policy pracas_pedagio_insert on public.pracas_pedagio
+  for insert to authenticated
+  with check (public.is_admin());
+
+drop policy if exists pracas_pedagio_update on public.pracas_pedagio;
+create policy pracas_pedagio_update on public.pracas_pedagio
+  for update to authenticated
+  using (public.is_admin())
+  with check (public.is_admin());
+
+drop policy if exists pracas_pedagio_delete on public.pracas_pedagio;
+create policy pracas_pedagio_delete on public.pracas_pedagio
+  for delete to authenticated
+  using (public.is_admin());
+
 -- ===========================================================================
 -- DADOS — seed de demonstração (idempotente via on conflict do nothing)
 -- Serve só para validar o fluxo visual. Nenhum vínculo com auth.users.
@@ -246,6 +290,20 @@ values
   ('coleta-campinas-ribeirao-pirassununga', 'coleta-campinas-ribeirao', 'Praça Pirassununga', 10.60, 1),
   ('coleta-campinas-ribeirao-santa-rita', 'coleta-campinas-ribeirao', 'Anhanguera — Praça Santa Rita', 9.80, 2)
 on conflict (id) do nothing;
+
+-- catálogo de praças de pedágio — só popula se a tabela estiver vazia
+insert into public.pracas_pedagio (uf, praca, valor)
+select v.uf, v.praca, v.valor
+from (values
+  ('SP', 'Anhanguera (SP-330) — Praça Jundiaí', 12.40),
+  ('SP', 'Bandeirantes (SP-348) — Praça Caieiras', 11.10),
+  ('SP', 'Rodovia dos Imigrantes (SP-160) — Praça Diadema', 16.40),
+  ('RJ', 'Via Dutra (BR-116) — Praça Viúva Graça', 18.70),
+  ('MG', 'Fernão Dias (BR-381) — Praça Igarapé', 10.30),
+  ('PR', 'BR-116 — Praça Balsa Nova', 9.50),
+  ('SC', 'BR-101 — Praça Garuva', 12.00)
+) as v(uf, praca, valor)
+where not exists (select 1 from public.pracas_pedagio);
 
 -- ===========================================================================
 -- PASSO MANUAL — promover o primeiro administrador

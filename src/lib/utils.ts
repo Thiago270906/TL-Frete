@@ -70,3 +70,14 @@ export function formatarCep(cep: string): string {
   if (d.length <= 5) return d;
   return `${d.slice(0, 5)}-${d.slice(5)}`;
 }
+
+const formatadorDataHora = new Intl.DateTimeFormat("pt-BR", {
+  dateStyle: "short",
+  timeStyle: "short",
+});
+
+/** Data + hora curtas (ex.: `29/08/2026 14:32`). Aceita ISO string ou Date. */
+export function formatarDataHora(valor: string | Date): string {
+  const d = valor instanceof Date ? valor : new Date(valor);
+  return Number.isNaN(d.getTime()) ? "—" : formatadorDataHora.format(d);
+}

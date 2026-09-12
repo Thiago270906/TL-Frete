@@ -1,8 +1,9 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, MapPin, Plus, Trash2 } from "lucide-react";
 import {
   Dialog,
@@ -17,6 +18,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   subtotalDistancia,
   totalPedagios,
   useCotacoes,
@@ -24,8 +34,24 @@ import {
 } from "@/lib/cotacoes-store";
 import { calcularDistanciaEntreCeps, buscarCep, type EnderecoCep } from "@/lib/cep";
 import { MapaRota } from "@/components/mapa-rota";
-import type { CotacaoComPedagios } from "@/lib/supabase";
+import { supabase, type CotacaoComPedagios, type LinhaPracaPedagio } from "@/lib/supabase";
 import { formatarBRL, formatarCep, formatarKm, normalizarCep } from "@/lib/utils";
+
+/** Mesma chave usada em `/pedagios`, para compartilhar cache entre as duas telas. */
+const CHAVE_CATALOGO_PEDAGIO = ["pracas-pedagio"] as const;
+
+/** Sentinela usado no seletor de praça para "não está no catálogo". */
+const PRACA_MANUAL = "__manual__";
+
+async function carregarCatalogoPedagio(): Promise<LinhaPracaPedagio[]> {
+  const { data, error } = await supabase
+    .from("pracas_pedagio")
+    .select("*")
+    .order("uf", { ascending: true })
+    .order("praca", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as LinhaPracaPedagio[];
+}
 
 /**
  * Rótulo de uma ponta do trajeto: `Cidade/UF` (ex.: `São Paulo/SP`).
@@ -52,6 +78,8 @@ const cepValido = (rotulo: string) =>
 
 const pedagioSchema = z.object({
   id: z.string().optional(),
+  /** ID da praça no catálogo (`pracas_pedagio`); `PRACA_MANUAL` quando digitada à mão. */
+  praca_id: z.string().optional(),
   praca: z.string().min(1, "Informe a praça"),
   valor: z
     .number({ invalid_type_error: "Informe um valor" })
@@ -101,6 +129,9 @@ function valoresIniciais(cotacao: CotacaoComPedagios | undefined): ValoresForm {
     valor_faixa: cotacao.valor_faixa,
     pedagios: cotacao.pedagios.map((p) => ({
       id: p.id,
+      // Pedágio já salvo: abre em modo manual (mostra o texto atual, editável).
+      // Escolher uma praça do catálogo no select substitui esse texto.
+      praca_id: PRACA_MANUAL,
       praca: p.praca,
       valor: p.valor,
     })),
@@ -127,6 +158,12 @@ function useFormularioCotacao(
 ) {
   const { cotacao, aoSalvar } = opcoes;
   const { cotacoes, criarCotacao, editarCotacao } = useCotacoes();
+  const qc = useQueryClient();
+  const catalogo = useQuery({
+    queryKey: CHAVE_CATALOGO_PEDAGIO,
+    queryFn: carregarCatalogoPedagio,
+    staleTime: 30_000,
+  });
   const [calculando, setCalculando] = useState(false);
   const [rota, setRota] = useState<RotaCalculada | null>(null);
 
@@ -209,7 +246,49 @@ function useFormularioCotacao(
   }
 
   function adicionarPedagio() {
-    pedagios.append({ praca: "", valor: 0 });
+    pedagios.append({ praca_id: "", praca: "", valor: 0 });
+  }
+
+  /**
+   * Praças escolhidas do catálogo cujo valor foi alterado no formulário: ao
+   * salvar, isso atualiza o preço "real" em `pracas_pedagio` (some/fica
+   * restrito a admins pela RLS — falha é silenciosa para os demais).
+   */
+  async function sincronizarCatalogo(pedagiosForm: ValoresForm["pedagios"]) {
+    const catalogoAtual = catalogo.data ?? [];
+    const alterados = pedagiosForm.filter((p) => {
+      if (!p.praca_id || p.praca_id === PRACA_MANUAL) return false;
+      const item = catalogoAtual.find((c) => c.id === p.praca_id);
+      if (!item) return false;
+      const novoValor = Math.round((Number(p.valor) || 0) * 100) / 100;
+      return Math.abs(novoValor - item.valor) > 0.001;
+    });
+    if (alterados.length === 0) return;
+
+    const resultados = await Promise.allSettled(
+      alterados.map(async (p) => {
+        const { error } = await supabase
+          .from("pracas_pedagio")
+          .update({
+            valor: Math.round((Number(p.valor) || 0) * 100) / 100,
+            atualizado_em: new Date().toISOString(),
+          })
+          .eq("id", p.praca_id as string);
+        if (error) throw error;
+      }),
+    );
+
+    const falhas = resultados.filter((r) => r.status === "rejected").length;
+    if (falhas < alterados.length) {
+      qc.invalidateQueries({ queryKey: CHAVE_CATALOGO_PEDAGIO });
+    }
+    if (falhas > 0) {
+      toast.warning(
+        falhas === alterados.length
+          ? "Cálculo salvo, mas o catálogo de pedágios não foi atualizado (só administradores alteram os preços)."
+          : `Cálculo salvo. ${falhas} preço(s) não puderam ser atualizados no catálogo.`,
+      );
+    }
   }
 
   const submeter = handleSubmit(async (valores) => {
@@ -232,12 +311,14 @@ function useFormularioCotacao(
       await criarCotacao(payload);
       restaurar(undefined); // limpa para o próximo cálculo
     }
+    await sincronizarCatalogo(valores.pedagios);
     aoSalvar?.();
   });
 
   return {
     form,
     pedagios,
+    catalogo,
     calculando,
     rota,
     calcularDistancia,
@@ -254,11 +335,12 @@ type ControleFormulario = ReturnType<typeof useFormularioCotacao>;
 // ---------------------------------------------------------------------------
 
 function CamposCotacao({ ctrl }: { ctrl: ControleFormulario }) {
-  const { form, pedagios, calculando, rota, calcularDistancia, adicionarPedagio } =
+  const { form, pedagios, catalogo, calculando, rota, calcularDistancia, adicionarPedagio } =
     ctrl;
   const {
     register,
     watch,
+    setValue,
     formState: { errors },
   } = form;
 
@@ -267,6 +349,34 @@ function CamposCotacao({ ctrl }: { ctrl: ControleFormulario }) {
   const valorFaixa = Number(watch("valor_faixa")) || 0;
   const pedagiosAtuais = watch("pedagios");
   const trajeto = watch("rota") ?? [];
+
+  const catalogoPorUf = useMemo(() => {
+    const mapa = new Map<string, LinhaPracaPedagio[]>();
+    for (const item of catalogo.data ?? []) {
+      const lista = mapa.get(item.uf) ?? [];
+      lista.push(item);
+      mapa.set(item.uf, lista);
+    }
+    return mapa;
+  }, [catalogo.data]);
+
+  function selecionarPraca(i: number, pracaId: string) {
+    setValue(`pedagios.${i}.praca_id`, pracaId, { shouldDirty: true });
+    if (pracaId === PRACA_MANUAL) {
+      setValue(`pedagios.${i}.praca`, "", { shouldDirty: true, shouldValidate: true });
+      return;
+    }
+    const item = catalogo.data?.find((c) => c.id === pracaId);
+    if (!item) return;
+    setValue(`pedagios.${i}.praca`, `${item.uf} · ${item.praca}`, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    setValue(`pedagios.${i}.valor`, item.valor, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+  }
 
   const subtotal = subtotalDistancia({
     distancia_km: distanciaKm,
@@ -448,16 +558,52 @@ function CamposCotacao({ ctrl }: { ctrl: ControleFormulario }) {
 
         <div className="space-y-1.5">
           {pedagios.fields.map((campo, i) => {
+            const pracaIdAtual = pedagiosAtuais?.[i]?.praca_id ?? "";
+            const manual = pracaIdAtual === PRACA_MANUAL;
+            const itemSelecionado =
+              !manual && pracaIdAtual
+                ? catalogo.data?.find((c) => c.id === pracaIdAtual)
+                : undefined;
+
             return (
               <div
                 key={campo.id}
                 className="grid items-start gap-2 rounded-lg border border-border p-2.5 sm:grid-cols-[1fr_8rem_auto]"
               >
                 <div className="space-y-1">
-                  <Input
-                    placeholder="Praça / rodovia"
-                    {...register(`pedagios.${i}.praca` as const)}
-                  />
+                  <Select
+                    value={pracaIdAtual || undefined}
+                    onValueChange={(v) => selecionarPraca(i, v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione a praça">
+                        {manual ? "Outro (digitar manualmente)" : itemSelecionado?.praca}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={PRACA_MANUAL}>
+                        Outro (digitar manualmente)
+                      </SelectItem>
+                      {Array.from(catalogoPorUf.entries()).map(([uf, itens]) => (
+                        <SelectGroup key={uf}>
+                          <SelectLabel>{uf}</SelectLabel>
+                          {itens.map((item) => (
+                            <SelectItem key={item.id} value={item.id}>
+                              {item.praca} · {formatarBRL(item.valor)}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {manual && (
+                    <Input
+                      placeholder="Nome da praça / rodovia"
+                      {...register(`pedagios.${i}.praca` as const)}
+                    />
+                  )}
+
                   {errors.pedagios?.[i]?.praca && (
                     <p className="text-xs font-medium text-destructive">
                       {errors.pedagios[i]?.praca?.message}

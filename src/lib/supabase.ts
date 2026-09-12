@@ -59,6 +59,20 @@ export interface LinhaPedagio {
   updated_at: string;
 }
 
+/** Cadastro (catálogo) de praças de pedágio — referência, mantida pelo admin. */
+export interface LinhaPracaPedagio {
+  id: string;
+  /** UF onde fica a praça (2 letras). */
+  uf: string;
+  /** Praça / rodovia. */
+  praca: string;
+  valor: number;
+  /** Quando o admin atualizou este pedágio pela última vez. */
+  atualizado_em: string;
+  created_at: string;
+  updated_at: string;
+}
+
 /** Cotação com seus pedágios aninhados — formato usado no cache do React Query. */
 export interface CotacaoComPedagios extends LinhaCotacao {
   pedagios: LinhaPedagio[];

@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Receipt,
   Route as RouteIcon,
   Users,
   X,
@@ -23,6 +24,7 @@ interface ItemNav {
 const NAV: ItemNav[] = [
   { rotulo: "Dashboard", para: "/", icone: LayoutDashboard },
   { rotulo: "Calculadora", para: "/calculadora", icone: Calculator },
+  { rotulo: "Pedágios", para: "/pedagios", icone: Receipt, soAdmin: true },
   { rotulo: "Equipe", para: "/equipe", icone: Users, soAdmin: true },
 ];
 
